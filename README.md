@@ -13,10 +13,10 @@ DISCLAIMER: This has been tested on Dell R720 servers and some reports confirm t
 
 SETUP and USAGE:
 
- crontab -l > mycron
- echo "#" >> mycron
- echo "# At every minute" >> mycron
- echo "*/1 * * * * /bin/bash /scripts/dell_ipmi_fan_control.sh >> /tmp/cron.log" >> mycron
- crontab mycron
- rm mycron
- chmod +x /scripts/dell_ipmi_fan_control.sh
+crontab -l > mycron
+echo "#" >> mycron
+echo "# At every minute" >> mycron
+echo "*/1 * * * * /bin/bash /scripts/dell_ipmi_fan_control.sh >> /tmp/cron.log" >> mycron
+crontab mycron
+rm mycron
+chmod +x /scripts/dell_ipmi_fan_control.sh
