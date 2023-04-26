@@ -20,4 +20,3 @@ SETUP and USAGE:
  crontab mycron
  rm mycron
  chmod +x /scripts/dell_ipmi_fan_control.sh
- 
