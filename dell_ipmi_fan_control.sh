@@ -26,52 +26,92 @@
 # chmod +x /scripts/dell_ipmi_fan_control.sh
 #
 #SCRIPT START
-DATE=$(date +%Y-%m-%d-%H%M%S)
-echo "Fan Controller----------------------------V1.4"
-echo "$DATE"
-#
-MINSPEED=25 #the minimum fan speed as a percent
-GROWFACTOR=2 #the fan percent to increase by per degree
-MINSPEEDBASE16=19 #the minimum speed in BASE16
-#sensor IDs. To find the correct IDs for your system, run: impitool sdr type temperature
+DATE=$(date +%y%m%d-%H%M%S)
+
+#===Variables===
+#minimum fan speed (%)
+MINSPEED=25
+#fan speed (%) to grow per degree celsius
+GROWFACTOR=2
+#fan speed (%) to set in base16 when temps are below TEMPTHRESHOLDLOW
+MINSPEEDBASE16=19
+#check these on your systems, run ipmitool sdr type temperature and check for CPU sensors
 SENSORNAME="0Eh"
 SENSORNAME2="0Fh"
-#low and high temperature thresholds in degrees celsius. Fan speeds will scale based on these values
+#low temperature (deg C) for fan calculations
 TEMPTHRESHOLDLOW=45
+#high temperature (dec C) over which fans are set to max
 TEMPTHRESHOLDHIGH=70
-#emergency temperature threshold in degrees celsius. At this temp, full fan control is returned to IPMI
-EMERGTHRESHOLD=70
-#
-#Detect and display CPU temperatures
+
+#===iDRAC Variables===
+#iDRAC account that must have administrator permissions for IPMI over LAN
+USERACCOUNT="<iDRAC username>"
+PASSWORD="<iDRAC password>"
+#set in iDRAC Settings > Network > IPMI Settings > Encryption Key
+SOL_KEY="<iDRAC IPMI Encryption Key>"
+#do not change
+PROTOCOL="lanplus"
+#array of remote hosts to manage fans on
+HOSTS=("192.168.0.11" "192.168.0.12" "192.168.0.13")
+
+#===LOCALHOST Fan control===
+#you can delete this section if not needed
 T1=$(ipmitool sdr type temperature | grep $SENSORNAME | cut -d"|" -f5 | cut -d" " -f2)
 T2=$(ipmitool sdr type temperature | grep $SENSORNAME2 | cut -d"|" -f5 | cut -d" " -f2)
-if [[ $T1 > $T2 ]]; then 
+if [[ -z $T1 || -z $T2 ]]; then
+    TC=$TEMPTHRESHOLDHIGH
+elif (( $T1 > $T2 )); then
     TC=$T1
 else
     TC=$T2
 fi
-echo "CPU0: $T1 C"
-echo "CPU1: $T2 C"
-#
-#Test temperatures
-if (($TC >= $EMERGTHRESHOLD)); then
-    #Temperature over emergency threshold, full fan control is returned to IPMI
-    echo "WARN: Temperature(s) above emergency threshold of $EMERGTHRESHOLD C"
-    ipmitool raw 0x30 0x30 0x01 0x01
-elif (($TC >= $TEMPTHRESHOLDLOW && $TC < $TEMPTHRESHOLDHIGH)); then
-    #temperature is in the scaling range, calculate the offset and set the fan speed
-    #offset is = ([highest temp] - [low threshold]) * [growth factor]
+OUT="FAN-V3.0-${DATE}:LOCALHOST:"
+
+if (( $TC >= $TEMPTHRESHOLDHIGH )); then
+    ipmitool raw 0x30 0x30 0x01 0x01 >/dev/null
+    echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:WARN:Temperature(s) above maximum threshold of $TEMPTHRESHOLDHIGH C"
+elif (( $TC >= $TEMPTHRESHOLDLOW && $TC < $TEMPTHRESHOLDHIGH )); then
     OFFSET=$(( ($TC - $TEMPTHRESHOLDLOW) * $GROWFACTOR ))
     OFFSETBASE16=$( printf "%x" $OFFSET )
     SPEEDSET=$(( $MINSPEED + $OFFSET ))
     SETBASE16=$( printf "%x" $SPEEDSET )
-    echo "Setting static fan speed to $SPEEDSET% (0x$SETBASE16)"
-    ipmitool raw 0x30 0x30 0x01 0x00
-    ipmitool raw 0x30 0x30 0x02 0xff 0x$SETBASE16
+    echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:SPEED=${SPEEDSET}%(0x${SETBASE16})"
+    ipmitool raw 0x30 0x30 0x01 0x00 >/dev/null
+    ipmitool raw 0x30 0x30 0x02 0xff 0x$SETBASE16 >/dev/null
 else
-    #temperature is below the scaling range, set fan speed to minimum
-    echo "In low range..."
-    ipmitool raw 0x30 0x30 0x01 0x00
-    ipmitool raw 0x30 0x30 0x02 0xff 0x$MINSPEEDBASE16
+    ipmitool raw 0x30 0x30 0x01 0x00 >/dev/null
+    ipmitool raw 0x30 0x30 0x02 0xff 0x$MINSPEEDBASE16 >/dev/null
+    echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:LOWTEMP"
 fi
-#END SCRIPT
+
+#===REMOTE HOST Fan control===
+for IP in "${HOSTS[@]}"; do
+    T1=$(ipmitool sdr type temperature -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" | grep $SENSORNAME | cut -d"|" -f5 | cut -d" " -f2)
+    T2=$(ipmitool sdr type temperature -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" | grep $SENSORNAME2 | cut -d"|" -f5 | cut -d" " -f2)
+    if [[ -z $T1 || -z $T2 ]]; then
+        TC=$TEMPTHRESHOLDHIGH
+    elif (( $T1 > $T2 )); then
+        TC=$T1
+    else
+        TC=$T2
+    fi
+    OUT="FAN-V3.0-${DATE}:${IP}:"
+    #echo "${OUT}CPU0=${T1}C:CPU1=${T2}C"
+
+    if (( $TC >= $TEMPTHRESHOLDHIGH )); then
+        ipmitool raw 0x30 0x30 0x01 0x01 -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" >/dev/null
+        echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:WARN:Temperature(s) above maximum threshold of $TEMPTHRESHOLDHIGH C"
+    elif (( $TC >= $TEMPTHRESHOLDLOW && $TC < $TEMPTHRESHOLDHIGH )); then
+        OFFSET=$(( ($TC - $TEMPTHRESHOLDLOW) * $GROWFACTOR ))
+        OFFSETBASE16=$( printf "%x" $OFFSET )
+        SPEEDSET=$(( $MINSPEED + $OFFSET ))
+        SETBASE16=$( printf "%x" $SPEEDSET )
+        echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:SPEED=${SPEEDSET}%(0x${SETBASE16})"
+        ipmitool raw 0x30 0x30 0x01 0x00 -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" >/dev/null
+        ipmitool raw 0x30 0x30 0x02 0xff -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" 0x$SETBASE16 >/dev/null
+    else
+        ipmitool raw 0x30 0x30 0x01 0x00 -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" >/dev/null
+        ipmitool raw 0x30 0x30 0x02 0xff 0x$MINSPEEDBASE16 -I ${PROTOCOL} -H "${IP}" -U "${USERACCOUNT}" -P "${PASSWORD}" -y "${SOL_KEY}" >/dev/null
+        echo "${OUT}CPU0=${T1}C:CPU1=${T2}C:LOWTEMP"
+    fi
+done
