@@ -9,14 +9,14 @@ You should have received a copy of the GNU General Public License along with thi
 
 IPMI Fan Control Override Script
 
-DISCLAIMER: This has been tested on Dell R720 servers and some reports confirm that it works on other Dell servers. You need to test the ipmitool commands before implementing in your environment!
+DISCLAIMER: This has been tested on Dell R620 and R720 servers and some reports confirm that it works on other Dell servers. You need to test the ipmitool commands before implementing in your environment!
 
 SETUP and USAGE:
 
   crontab -l > mycron;
   echo "#" >> mycron;
   echo "# At every minute" >> mycron;
-  echo "*/1 * * * * /bin/bash /scripts/dell_ipmi_fan_control.sh >> /tmp/cron.log" >> mycron;
+  echo "*/1 * * * * root /bin/bash /scripts/fan_control.sh 2>&1 | /usr/bin/logger -t fan_control" >> mycron;
   crontab mycron;
   rm mycron;
-  chmod +x /scripts/dell_ipmi_fan_control.sh;
+  chmod +x /scripts/fan_control.sh;
