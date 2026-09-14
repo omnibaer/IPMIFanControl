@@ -20,10 +20,10 @@
 # crontab -l > mycron
 # echo "#" >> mycron
 # echo "# At every minute" >> mycron
-# echo "*/1 * * * * /bin/bash /scripts/dell_ipmi_fan_control.sh >> /tmp/cron.log" >> mycron
+# echo "*/1 * * * * root /bin/bash /scripts/fan_control.sh 2>&1 | /usr/bin/logger -t fan_control" >> mycron
 # crontab mycron
 # rm mycron
-# chmod +x /scripts/dell_ipmi_fan_control.sh
+# chmod +x /scripts/fan_control.sh
 #
 #SCRIPT START
 DATE=$(date +%y%m%d-%H%M%S)
